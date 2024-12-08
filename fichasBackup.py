@@ -3,8 +3,6 @@ from tkinter import ttk, messagebox, filedialog
 import json
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
-import os
-from PIL import Image, ImageTk
 
 class FichaDnD:
     def __init__(self, root):
@@ -28,84 +26,17 @@ class FichaDnD:
         frame = ttk.LabelFrame(self.root, text="Informações Básicas")
         frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
 
-        # Frame esquerdo para informações textuais
-        info_frame = ttk.Frame(frame)
-        info_frame.pack(side="left", fill="both", expand=True, padx=5, pady=5)
-
-        labels = ["Nome", "Raça", "Antecedente", "Nível"]
+        labels = ["Nome", "Raça", "Nível"]
         self.basic_info_vars = {}
 
         for i, label in enumerate(labels):
-            ttk.Label(info_frame, text=label).grid(row=i, column=0, padx=5, pady=5, sticky="w")
+            ttk.Label(frame, text=label).grid(row=i, column=0, padx=5, pady=5)
             var = tk.StringVar()
             if label == "Nível":
-                var.trace('w', self.update_proficiency_bonus)
-            entry = ttk.Entry(info_frame, textvariable=var)
-            entry.grid(row=i, column=1, padx=5, pady=5, sticky="ew")
+                var.trace('w', self.update_proficiency_bonus)  # Adiciona trace para nível
+            entry = ttk.Entry(frame, textvariable=var)
+            entry.grid(row=i, column=1, padx=5, pady=5)
             self.basic_info_vars[label] = var
-
-        # Frame direito para a foto
-        photo_frame = ttk.Frame(frame)
-        photo_frame.pack(side="right", padx=5, pady=5)
-
-        # Canvas para a imagem
-        self.photo_canvas = tk.Canvas(photo_frame, width=150, height=150)
-        self.photo_canvas.pack(pady=(0, 5))
-
-        # Frame para os botões da foto
-        button_frame = ttk.Frame(photo_frame)
-        button_frame.pack(fill="x")
-
-        # Botões lado a lado
-        ttk.Button(button_frame, text="Selecionar Foto", 
-                   command=self.select_photo).pack(side="left", padx=2)
-        ttk.Button(button_frame, text="Remover Foto", 
-                   command=self.remove_photo).pack(side="left", padx=2)
-
-        # Imagem padrão ou placeholder
-        self.photo_path = None
-        self.photo_image = None
-        self.set_default_photo()
-
-    def set_default_photo(self):
-        """Define uma imagem padrão ou placeholder no canvas"""
-        self.photo_canvas.delete("all")
-        self.photo_canvas.create_rectangle(0, 0, 150, 150, fill="lightgray")
-        self.photo_canvas.create_text(75, 75, text="Foto do\nPersonagem", justify="center")
-        self.photo_path = None
-        self.photo_image = None
-
-    def select_photo(self):
-        """Permite ao usuário selecionar uma foto"""
-        file_path = filedialog.askopenfilename(
-            filetypes=[
-                ("Imagens", "*.png *.jpg *.jpeg *.gif *.bmp"),
-                ("Todos os arquivos", "*.*")
-            ]
-        )
-        
-        if file_path:
-            try:
-                # Carregar e redimensionar a imagem
-                image = Image.open(file_path)
-                image = image.resize((150, 150), Image.Resampling.LANCZOS)
-                photo = ImageTk.PhotoImage(image)
-                
-                # Atualizar canvas
-                self.photo_canvas.delete("all")
-                self.photo_canvas.create_image(0, 0, anchor="nw", image=photo)
-                
-                # Manter referências
-                self.photo_image = photo
-                self.photo_path = file_path
-                
-            except Exception as e:
-                messagebox.showerror("Erro", f"Erro ao carregar imagem: {str(e)}")
-                self.set_default_photo()
-
-    def remove_photo(self):
-        """Remove a foto atual e restaura o placeholder"""
-        self.set_default_photo()
 
     def create_classes_section(self):
         frame = ttk.LabelFrame(self.root, text="Classes")
@@ -167,31 +98,24 @@ class FichaDnD:
             skill_frame = ttk.Frame(frame)
             skill_frame.grid(row=i, column=0, columnspan=3, sticky="w", padx=5)
             
-            # Frame para os checkboxes e label
+            # Label com nome da perícia
+            ttk.Label(skill_frame, text=f"{skill} ({attr})").pack(side="left")
+            
+            # Frame para os checkboxes
             check_frame = ttk.Frame(skill_frame)
-            check_frame.pack(side="left")
+            check_frame.pack(side="left", padx=5)
             
-            # Checkboxes
+            # Primeiro checkbox de proficiência
             prof1_var = tk.BooleanVar()
-            prof2_var = tk.BooleanVar()
-            
-            cb1 = ttk.Checkbutton(check_frame, variable=prof1_var, command=lambda s=skill: self.update_skill_total(s))
+            cb1 = ttk.Checkbutton(check_frame, text="", variable=prof1_var)
             cb1.pack(side="left", padx=2)
             
-            cb2 = ttk.Checkbutton(check_frame, variable=prof2_var, command=lambda s=skill: self.update_skill_total(s))
+            # Segundo checkbox de proficiência
+            prof2_var = tk.BooleanVar()
+            cb2 = ttk.Checkbutton(check_frame, text="", variable=prof2_var)
             cb2.pack(side="left", padx=2)
             
-            # Label com nome da perícia
-            skill_label = ttk.Label(skill_frame, text=f"{skill} ({attr})", width=20, anchor="w")
-            skill_label.pack(side="left", padx=(5, 10))
-            
-            # Entry para bônus extra
-            bonus_var = tk.StringVar(value="0")
-            bonus_var.trace('w', lambda *args, s=skill: self.update_skill_total(s))
-            bonus_entry = ttk.Entry(skill_frame, textvariable=bonus_var, width=3)
-            bonus_entry.pack(side="left", padx=5)
-            
-            # Label para total
+            # Label para mostrar o total
             total_label = ttk.Label(skill_frame, text="+0")
             total_label.pack(side="left", padx=5)
             
@@ -200,53 +124,8 @@ class FichaDnD:
                 "prof1": prof1_var,
                 "prof2": prof2_var,
                 "attr": attr,
-                "bonus": bonus_var,
                 "label": total_label
             }
-
-    def update_skill_total(self, skill):
-        data = self.skill_vars[skill]
-        modifier = self.get_modifier(data["attr"])
-        prof_bonus = self.get_proficiency_bonus()
-        
-        # Calcula bônus de proficiência
-        total = modifier
-        if data["prof1"].get():
-            total += prof_bonus
-        if data["prof2"].get():
-            total += prof_bonus
-            
-        # Adiciona bônus extra
-        try:
-            bonus = int(data["bonus"].get() or 0)
-            total += bonus
-        except ValueError:
-            pass  # Ignora valores inválidos no bônus
-        
-        # Atualiza label
-        data["label"].config(text=f"{'+' if total >= 0 else ''}{total}")
-
-    def update_skills(self):
-        prof_bonus = self.get_proficiency_bonus()
-        
-        for skill, data in self.skill_vars.items():
-            modifier = self.get_modifier(data["attr"])
-            total = modifier
-            
-            # Adiciona o bônus de proficiência para cada checkbox marcado
-            if data["prof1"].get():
-                total += prof_bonus
-            if data["prof2"].get():
-                total += prof_bonus
-                
-            # Adiciona bônus extra
-            try:
-                bonus = int(data["bonus"].get() or 0)
-                total += bonus
-            except ValueError:
-                pass  # Ignora valores inválidos no bônus
-            
-            data["label"].config(text=f"{'+' if total >= 0 else ''}{total}")
 
     def create_combat_section(self):
         frame = ttk.LabelFrame(self.root, text="Combate")
@@ -290,90 +169,26 @@ class FichaDnD:
         frame = ttk.LabelFrame(self.root, text="Recursos")
         frame.grid(row=1, column=1, padx=10, pady=10, sticky="nsew")
 
-        # Frame para recursos padrão
-        default_frame = ttk.Frame(frame)
-        default_frame.pack(fill="x", padx=5, pady=5)
-
         resources = ["Vida", "Mana", "Estamina"]
         self.resources_vars = {}
         self.resources_max_vars = {}
 
         for i, resource in enumerate(resources):
-            ttk.Label(default_frame, text=resource).grid(row=i, column=0, padx=5, pady=5)
+            ttk.Label(frame, text=resource).grid(row=i, column=0, padx=5, pady=5)
             
             # Valor atual
             var_atual = tk.StringVar()
-            entry_atual = ttk.Entry(default_frame, textvariable=var_atual, width=5)
+            entry_atual = ttk.Entry(frame, textvariable=var_atual, width=5)
             entry_atual.grid(row=i, column=1, padx=5, pady=5)
             self.resources_vars[resource] = var_atual
             
-            ttk.Label(default_frame, text="/").grid(row=i, column=2)
+            ttk.Label(frame, text="/").grid(row=i, column=2)
             
             # Valor máximo
             var_max = tk.StringVar()
-            entry_max = ttk.Entry(default_frame, textvariable=var_max, width=5)
+            entry_max = ttk.Entry(frame, textvariable=var_max, width=5)
             entry_max.grid(row=i, column=3, padx=5, pady=5)
             self.resources_max_vars[resource] = var_max
-
-        # Separador
-        ttk.Separator(frame, orient='horizontal').pack(fill='x', padx=5, pady=10)
-
-        # Frame para recursos customizados
-        custom_frame = ttk.Frame(frame)
-        custom_frame.pack(fill="x", padx=5, pady=5)
-
-        # Lista para armazenar recursos customizados
-        self.custom_resources = []
-
-        # Botão para adicionar novo recurso
-        ttk.Button(custom_frame, text="Adicionar Recurso", 
-                   command=self.add_custom_resource).pack(pady=5)
-
-        # Frame para listar recursos customizados
-        self.custom_resources_frame = ttk.Frame(frame)
-        self.custom_resources_frame.pack(fill="x", padx=5, pady=5)
-
-    def add_custom_resource(self):
-        # Criar novo frame para o recurso
-        resource_frame = ttk.Frame(self.custom_resources_frame)
-        resource_frame.pack(fill="x", pady=2)
-
-        # Entry para nome do recurso
-        name_var = tk.StringVar()
-        name_entry = ttk.Entry(resource_frame, textvariable=name_var, width=15)
-        name_entry.pack(side="left", padx=2)
-
-        # Valor atual
-        atual_var = tk.StringVar()
-        atual_entry = ttk.Entry(resource_frame, textvariable=atual_var, width=5)
-        atual_entry.pack(side="left", padx=2)
-
-        # Separador
-        ttk.Label(resource_frame, text="/").pack(side="left", padx=2)
-
-        # Valor máximo
-        max_var = tk.StringVar()
-        max_entry = ttk.Entry(resource_frame, textvariable=max_var, width=5)
-        max_entry.pack(side="left", padx=2)
-
-        # Botão remover
-        remove_btn = ttk.Button(resource_frame, text="X", width=2,
-                               command=lambda: self.remove_custom_resource(resource_frame))
-        remove_btn.pack(side="left", padx=2)
-
-        # Adicionar à lista de recursos
-        self.custom_resources.append({
-            'frame': resource_frame,
-            'name': name_var,
-            'atual': atual_var,
-            'max': max_var
-        })
-
-    def remove_custom_resource(self, frame):
-        # Remover da lista
-        self.custom_resources = [r for r in self.custom_resources if r['frame'] != frame]
-        # Destruir frame
-        frame.destroy()
 
     def create_control_buttons(self):
         frame = ttk.Frame(self.root)
@@ -402,7 +217,6 @@ class FichaDnD:
 
     def export_to_json(self):
         data = {
-            'version': '1.1',  # Adicionando controle de versão
             'basic_info': {
                 k: v.get() for k, v in self.basic_info_vars.items()
             },
@@ -416,8 +230,7 @@ class FichaDnD:
                 k: {
                     'prof1': v['prof1'].get(),
                     'prof2': v['prof2'].get(),
-                    'attr': v['attr'],
-                    'bonus': v.get('bonus', tk.StringVar(value='0')).get()  # Compatibilidade com versões antigas
+                    'attr': v['attr']
                 } for k, v in self.skill_vars.items()
             },
             'combat': {
@@ -431,49 +244,38 @@ class FichaDnD:
                     'max': self.resources_max_vars[k].get()
                 } for k in self.resources_vars.keys()
             },
-            'custom_resources': [
-                {
-                    'nome': r['name'].get(),
-                    'atual': r['atual'].get(),
-                    'max': r['max'].get()
-                } for r in self.custom_resources
-            ],
             'spells': [
                 {
-                    'nivel': spell.get('nivel', ''),
-                    'nome': spell.get('nome', ''),
-                    'escola': spell.get('escola', ''),
-                    'tempo_conjuracao': spell.get('tempo_conjuracao', ''),
-                    'alcance': spell.get('alcance', ''),
-                    'componentes': spell.get('componentes', ''),
-                    'duracao': spell.get('duracao', ''),
-                    'teste_resistencia': spell.get('teste_resistencia', ''),
-                    'dano_efeito': spell.get('dano_efeito', ''),
-                    'descricao': spell.get('descricao', '')
+                    'nivel': spell['nivel'],
+                    'nome': spell['nome'],
+                    'escola': spell['escola'],
+                    'tempo_conjuracao': spell['tempo_conjuracao'],
+                    'alcance': spell['alcance'],
+                    'componentes': spell['componentes'],
+                    'duracao': spell['duracao'],
+                    'teste_resistencia': spell['teste_resistencia'],
+                    'dano_efeito': spell['dano_efeito'],
+                    'descricao': spell['descricao']
                 } for spell in self.spells_data
             ],
             'features': [
                 {
-                    'nome': feature.get('nome', ''),
-                    'descricao': feature.get('descricao', '')
-                } for feature in getattr(self, 'features_data', [])
+                    'nome': feature['nome'],
+                    'descricao': feature['descricao']
+                } for feature in self.features_data
             ],
             'inventory': [
                 {
-                    'nome': item.get('nome', ''),
-                    'tipo': item.get('tipo', ''),
-                    'bonus_atributos': item.get('bonus_atributos', {
-                        'FOR': '0', 'DES': '0', 'CON': '0', 
-                        'INT': '0', 'SAB': '0', 'CAR': '0'
-                    }),
-                    'bonus_ca': item.get('bonus_ca', '0'),
-                    'bonus_cd': item.get('bonus_cd', '0'),
-                    'dano_dado': item.get('dano_dado', ''),
-                    'dano_tipo': item.get('dano_tipo', ''),
-                    'descricao': item.get('descricao', '')
+                    'nome': item['nome'],
+                    'tipo': item['tipo'],
+                    'bonus_atributos': item['bonus_atributos'],
+                    'bonus_ca': item['bonus_ca'],
+                    'bonus_cd': item['bonus_cd'],
+                    'dano_dado': item['dano_dado'],
+                    'dano_tipo': item['dano_tipo'],
+                    'descricao': item['descricao']
                 } for item in getattr(self, 'inventory_data', [])
-            ],
-            'photo_path': self.photo_path,  # Adicionar caminho da foto
+            ]
         }
 
         file_path = filedialog.asksaveasfilename(
@@ -497,102 +299,32 @@ class FichaDnD:
         )
         
         if file_path:
-            try:
-                with open(file_path, 'r', encoding='utf-8') as file:
-                    data = json.load(file)
+            with open(file_path, 'r') as file:
+                data = json.load(file)
 
-                # Verificar versão e aplicar migrações necessárias
-                version = data.get('version', '1.0')
-                data = self._migrate_json_data(data, version)
-
-                # Limpar recursos customizados existentes
-                for resource in self.custom_resources:
-                    resource['frame'].destroy()
-                self.custom_resources.clear()
-
-                # Importar dados básicos
-                for k, v in data.get('basic_info', {}).items():
-                    if k in self.basic_info_vars:
-                        self.basic_info_vars[k].set(v)
-
-                for k, v in data.get('classes', {}).items():
-                    if k in self.class_vars:
-                        self.class_vars[k].set(v)
-
-                for k, v in data.get('attributes', {}).items():
-                    if k in self.attribute_vars:
-                        self.attribute_vars[k].set(v)
-
-                # Importar perícias com compatibilidade
-                for skill, skill_data in data.get('skills', {}).items():
-                    if skill in self.skill_vars:
-                        self.skill_vars[skill]['prof1'].set(skill_data.get('prof1', False))
-                        self.skill_vars[skill]['prof2'].set(skill_data.get('prof2', False))
-                        if 'bonus' in skill_data:
-                            self.skill_vars[skill]['bonus'].set(skill_data['bonus'])
-
-                # Importar recursos padrão
-                for k, v in data.get('resources', {}).items():
-                    if k in self.resources_vars:
-                        self.resources_vars[k].set(v.get('atual', '0'))
-                        self.resources_max_vars[k].set(v.get('max', '0'))
-
-                # Importar recursos customizados
-                for custom_resource in data.get('custom_resources', []):
-                    self.add_custom_resource()
-                    last_resource = self.custom_resources[-1]
-                    last_resource['name'].set(custom_resource.get('nome', ''))
-                    last_resource['atual'].set(custom_resource.get('atual', '0'))
-                    last_resource['max'].set(custom_resource.get('max', '0'))
-
-                # Importar listas de dados
-                self.spells_data = data.get('spells', [])
-                self.abilities_data = data.get('abilities', [])
-                self.features_data = data.get('features', [])
-                self.inventory_data = data.get('inventory', [])
-
-                # Atualizar interface
-                self.update_modifiers()
-                self.update_proficiency_bonus()
-                self.update_ac()
-                self.update_spell_dc()
-                self.update_passive_perception()
-
-                # Carregar foto se existir
-                photo_path = data.get('photo_path')
-                if photo_path and os.path.exists(photo_path):
-                    self.photo_path = photo_path
-                    self.select_photo()  # Isso vai recarregar a foto
-                else:
-                    self.set_default_photo()
-
-                messagebox.showinfo("Sucesso", "Ficha carregada com sucesso!")
-            except Exception as e:
-                messagebox.showerror("Erro", f"Erro ao carregar a ficha: {str(e)}")
-                import traceback
-                traceback.print_exc()
-
-    def _migrate_json_data(self, data, version):
-        """Migra dados de versões antigas para o formato atual"""
-        if version == '1.0':
-            # Migrar dados da versão 1.0 para 1.1
-            if 'skills' in data:
-                for skill in data['skills'].values():
-                    if 'bonus' not in skill:
-                        skill['bonus'] = '0'
+            for k, v in data.get('basic_info', {}).items():
+                if k in self.basic_info_vars:
+                    self.basic_info_vars[k].set(v)
+            for k, v in data.get('classes', {}).items():
+                if k in self.class_vars:
+                    self.class_vars[k].set(v)
+            for k, v in data.get('attributes', {}).items():
+                if k in self.attribute_vars:
+                    self.attribute_vars[k].set(v)
+            for k, v in data.get('resources', {}).items():
+                if k in self.resources_vars:
+                    self.resources_vars[k].set(v.get('atual', ''))
+                    self.resources_max_vars[k].set(v.get('max', ''))
+            self.spells_data = data.get('spells', [])
+            self.abilities_data = data.get('abilities', [])
+            self.inventory_data = data.get('inventory', [])
+            self.features_data = data.get('features', [])
             
-            if 'custom_resources' not in data:
-                data['custom_resources'] = []
-
-            if 'photo_path' not in data:
-                data['photo_path'] = None
-            
-            if 'basic_info' in data and 'Antecedente' not in data['basic_info']:
-                data['basic_info']['Antecedente'] = ''
-
-            data['version'] = '1.1'
-
-        return data
+            # Importar skills
+            for skill, skill_data in data.get('skills', {}).items():
+                if skill in self.skill_vars:
+                    self.skill_vars[skill]['prof1'].set(skill_data.get('prof1', False))
+                    self.skill_vars[skill]['prof2'].set(skill_data.get('prof2', False))
 
     def update_modifiers(self, attr=None):
         for attribute, var in self.attribute_vars.items():
@@ -614,6 +346,21 @@ class FichaDnD:
             return (value - 10) // 2
         except (ValueError, KeyError):
             return 0
+
+    def update_skills(self):
+        prof_bonus = self.get_proficiency_bonus()
+        
+        for skill, data in self.skill_vars.items():
+            modifier = self.get_modifier(data["attr"])
+            total = modifier
+            
+            # Adiciona o bônus de proficiência para cada checkbox marcado
+            if data["prof1"].get():
+                total += prof_bonus
+            if data["prof2"].get():
+                total += prof_bonus
+            
+            data["label"].config(text=f"{'+' if total >= 0 else ''}{total}")
 
     def update_ac(self, *args):
         try:
@@ -1001,7 +748,11 @@ class FichaDnD:
             
             extracted_data = {
                 'basic_info': {},
-                'classes': {},
+                'classes': {
+                    'Classe Primária': '',
+                    'Classe Secundária': '',
+                    'Classe Terciária': ''
+                },
                 'attributes': {},
                 'skills': {},
                 'spells': [],
@@ -1022,14 +773,11 @@ class FichaDnD:
                 section = section.strip()
                 
                 # Identificar seções principais
-                if "Recursos" in section:
-                    current_section = 'resources'
+                if "Classes" in section:
+                    current_section = 'classes'
                     continue
                 elif "Informações Básicas" in section:
                     current_section = 'basic_info'
-                    continue
-                elif "Classes" in section:
-                    current_section = 'classes'
                     continue
                 elif "Atributos" in section:
                     current_section = 'attributes'
@@ -1047,23 +795,17 @@ class FichaDnD:
                     current_section = 'inventory'
                     continue
                 
-                # Processar recursos
-                if current_section == 'resources':
+                # Processar classes
+                if current_section == 'classes':
                     for line in section.split('\n'):
                         line = line.strip()
                         if not line or ':' not in line:
                             continue
                         
-                        # Formato esperado: "Recurso: atual/máximo"
-                        for resource in ['Vida', 'Mana', 'Estamina']:
-                            if line.startswith(resource):
-                                values = line.split(':')[1].strip()
-                                if '/' in values:
-                                    atual, maximo = values.split('/')
-                                    extracted_data['resources'][resource] = {
-                                        'atual': atual.strip(),
-                                        'max': maximo.strip()
-                                    }
+                        for class_type in ['Classe Primária', 'Classe Secundária', 'Classe Terciária']:
+                            if line.startswith(class_type):
+                                value = line.split(':', 1)[1].strip()
+                                extracted_data['classes'][class_type] = value
                 
                 # Processar conteúdo baseado na seção atual
                 if current_section == 'basic_info':
@@ -1176,10 +918,21 @@ class FichaDnD:
             if key in self.basic_info_vars:
                 self.basic_info_vars[key].set(value)
         
+        # Atualizar classes
+        for class_type, value in data['classes'].items():
+            if class_type in self.class_vars:
+                self.class_vars[class_type].set(value)
+        
         # Atualizar atributos
         for attr, value in data['attributes'].items():
             if attr in self.attribute_vars:
                 self.attribute_vars[attr].set(value)
+        
+        # Atualizar recursos
+        for resource, values in data['resources'].items():
+            if resource in self.resources_vars:
+                self.resources_vars[resource].set(values['atual'])
+                self.resources_max_vars[resource].set(values['max'])
         
         # Atualizar magias
         self.spells_data = data['spells']
@@ -1192,21 +945,6 @@ class FichaDnD:
         
         # Atualizar inventário
         self.inventory_data = data['inventory']
-        
-        # Atualizar recursos
-        for resource, values in data['resources'].items():
-            if resource in self.resources_vars:
-                self.resources_vars[resource].set(values['atual'])
-                self.resources_max_vars[resource].set(values['max'])
-        
-        # Atualizar recursos customizados
-        if 'custom_resources' in data:
-            for custom_resource in data['custom_resources']:
-                self.add_custom_resource()
-                last_resource = self.custom_resources[-1]
-                last_resource['name'].set(custom_resource['nome'])
-                last_resource['atual'].set(custom_resource['atual'])
-                last_resource['max'].set(custom_resource['max'])
         
         # Atualizar modificadores e outros cálculos
         self.update_modifiers()
@@ -1886,10 +1624,9 @@ class FeatureScreen:
 
     def on_feature_select(self, event):
         selected = self.feature_list.curselection()
-        
         if not selected:
             return
-            
+
         index = selected[0]
         feature = self.parent.features_data[index]
         

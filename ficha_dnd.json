@@ -1,0 +1,134 @@
+{
+    "basic_info": {
+        "Nome": "Drako Yurit",
+        "Raça": "Draconato",
+        "Nível": "7"
+    },
+    "classes": {
+        "Classe Primária": "Grandcaster 7 nvs",
+        "Classe Secundária": "Channeler 2 nvs",
+        "Classe Terciária": ""
+    },
+    "attributes": {
+        "FOR": "8",
+        "DES": "12",
+        "CON": "12",
+        "INT": "28",
+        "SAB": "16",
+        "CAR": "12"
+    },
+    "skills": {
+        "Acrobacia": {
+            "prof1": false,
+            "prof2": false,
+            "attr": "DES"
+        },
+        "Arcanismo": {
+            "prof1": true,
+            "prof2": true,
+            "attr": "INT"
+        },
+        "Atletismo": {
+            "prof1": false,
+            "prof2": false,
+            "attr": "FOR"
+        },
+        "Atuação": {
+            "prof1": false,
+            "prof2": false,
+            "attr": "CAR"
+        },
+        "Enganação": {
+            "prof1": false,
+            "prof2": false,
+            "attr": "CAR"
+        },
+        "Furtividade": {
+            "prof1": false,
+            "prof2": false,
+            "attr": "DES"
+        },
+        "História": {
+            "prof1": false,
+            "prof2": false,
+            "attr": "INT"
+        },
+        "Intimidação": {
+            "prof1": false,
+            "prof2": false,
+            "attr": "CAR"
+        },
+        "Intuição": {
+            "prof1": true,
+            "prof2": false,
+            "attr": "SAB"
+        },
+        "Investigação": {
+            "prof1": true,
+            "prof2": true,
+            "attr": "INT"
+        },
+        "Lidar com Animais": {
+            "prof1": false,
+            "prof2": false,
+            "attr": "SAB"
+        },
+        "Medicina": {
+            "prof1": false,
+            "prof2": false,
+            "attr": "SAB"
+        },
+        "Natureza": {
+            "prof1": false,
+            "prof2": false,
+            "attr": "INT"
+        },
+        "Percepção": {
+            "prof1": true,
+            "prof2": true,
+            "attr": "SAB"
+        },
+        "Persuasão": {
+            "prof1": false,
+            "prof2": false,
+            "attr": "CAR"
+        },
+        "Prestidigitação": {
+            "prof1": false,
+            "prof2": false,
+            "attr": "DES"
+        },
+        "Religião": {
+            "prof1": true,
+            "prof2": false,
+            "attr": "INT"
+        },
+        "Sobrevivência": {
+            "prof1": false,
+            "prof2": false,
+            "attr": "SAB"
+        }
+    },
+    "combat": {
+        "base_ac": "12",
+        "ac_attr": "INT",
+        "spell_attr": "INT"
+    },
+    "resources": {
+        "Vida": {
+            "atual": "79",
+            "max": "86"
+        },
+        "Mana": {
+            "atual": "78",
+            "max": "123"
+        },
+        "Estamina": {
+            "atual": "51",
+            "max": "81"
+        }
+    },
+    "spells": [],
+    "features": [],
+    "inventory": []
+}
