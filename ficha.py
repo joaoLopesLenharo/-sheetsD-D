@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+from tkinter import ttk, messagebox, filedialog, simpledialog
 import json
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
@@ -7,6 +7,7 @@ import os
 from PIL import Image, ImageTk
 import io
 import base64
+import traceback
 
 # Primeiro, definir a classe BackgroundScreen
 class BackgroundScreen:
@@ -215,7 +216,17 @@ class BackgroundScreen:
             }
         }
         
+        # Atualizar o nível geral na primeira classe
+        if 'classes' in self.parent.background_data:
+            primary_class = self.parent.background_data['classes'].get('Classe Primária', '')
+            if primary_class:
+                # Extrair o nível geral e atribuir à primeira classe
+                level = self.parent.background_data.get('basic_info', {}).get('Nível', '0')
+                self.parent.background_data['classes']['Classe Primária'] = f"{primary_class.split()[0]} {level} nvs"
+        
         self.parent.background_data = background_data
+        with open('ficha_dnd.json', 'w') as file:
+            json.dump(self.parent.background_data, file, indent=4)
         messagebox.showinfo("Sucesso", "Background salvo com sucesso!")
 
     def clear_all(self):
@@ -228,24 +239,32 @@ class BackgroundScreen:
 
     def load_background(self):
         """Carrega os dados do background se existirem"""
-        if hasattr(self.parent, 'background_data') and self.parent.background_data:
-            data = self.parent.background_data
-            
-            # Carregar informações de identidade
-            for key, value in data.get('identity', {}).items():
-                if key in self.identity_vars:
-                    self.identity_vars[key].set(value)
-            
-            # Carregar textos
-            for key, text in data.get('texts', {}).items():
-                if key in self.text_widgets:
-                    self.text_widgets[key].delete("1.0", tk.END)
-                    self.text_widgets[key].insert("1.0", text)
-            
-            # Carregar alinhamento
-            alignment = data.get('alignment', {})
-            self.moral_var.set(alignment.get('moral', ''))
-            self.order_var.set(alignment.get('order', ''))
+        try:
+            with open('ficha_dnd.json', 'r', encoding='utf-8') as file:  # Especificar a codificação utf-8
+                data = json.load(file)
+                self.parent.background_data = normalize_data(data)
+        except FileNotFoundError:
+            messagebox.showwarning("Aviso", "Arquivo de dados não encontrado.")
+            return
+        except Exception as e:
+            messagebox.showerror("Erro", f"Erro ao importar dados: {e}")
+            return
+
+        # Carregar informações de identidade
+        for key, value in self.parent.background_data.get('identity', {}).items():
+            if key in self.identity_vars:
+                self.identity_vars[key].set(value)
+        
+        # Carregar textos
+        for key, text in self.parent.background_data.get('texts', {}).items():
+            if key in self.text_widgets:
+                self.text_widgets[key].delete("1.0", tk.END)
+                self.text_widgets[key].insert("1.0", text)
+        
+        # Carregar alinhamento
+        alignment = self.parent.background_data.get('alignment', {})
+        self.moral_var.set(alignment.get('moral', ''))
+        self.order_var.set(alignment.get('order', ''))
 
 # Depois, definir a classe FichaDnD
 class FichaDnD:
@@ -253,16 +272,48 @@ class FichaDnD:
         self.root = root
         self.root.title("Ficha de D&D 5.5E")
         
+        # Vincular o evento de fechamento da janela ao método close_main_window
+        self.root.protocol("WM_DELETE_WINDOW", self.close_main_window)
+        
+        # Inicializar variáveis
+        self.photo_data = None
+        self.background_data = {}
+        self.spells_data = []
+        self.abilities_data = []
+        self.features_data = []
+        self.inventory_data = []
+        
+        # Inicializar identity_vars
+        self.identity_vars = {}
+        
+        # Inicializar text_widgets
+        self.text_widgets = {}
+        
+        # Defina o atributo initiative_var
+        self.initiative_var = tk.StringVar()
+        
+        # Defina o atributo speed_var
+        self.speed_var = tk.StringVar()
+        
+        # Defina o atributo hit_points_var
+        self.hit_points_var = tk.StringVar()
+        
+        # Defina o atributo temp_hit_points_var
+        self.temp_hit_points_var = tk.StringVar()
+        
+        # Inicializar moral_var
+        self.moral_var = tk.StringVar()  # Adicione esta linha para inicializar moral_var
+        
+        # Inicializar order_var
+        self.order_var = tk.StringVar()  # Adicione esta linha para inicializar order_var
+        
         # Criar menu
         self.create_menu()
         
         # Maximizar a janela deixando a barra de tarefas visível
         screen_width = root.winfo_screenwidth()
-        screen_height = root.winfo_screenheight() - 60  # Aumentado para 60 pixels
+        screen_height = root.winfo_screenheight() - 60
         root.geometry(f"{screen_width}x{screen_height}+0+0")
-        
-        # Adicionar variável para armazenar o caminho do arquivo atual
-        self.current_file_path = None
         
         # Criar canvas principal com scrollbar
         self.main_canvas = tk.Canvas(root)
@@ -282,17 +333,7 @@ class FichaDnD:
         # Configurar scroll com mousewheel
         self.main_canvas.bind_all("<MouseWheel>", self._on_mousewheel)
         
-        # Dados de magias e talentos
-        self.spells_data = []
-        self.abilities_data = []
-        self.features_data = []
-        self.inventory_data = []
-        self.background_data = {}
-
-        # Configurar atalho Ctrl+S
-        self.root.bind('<Control-s>', self.quick_save)
-
-        # Sessões de interface (agora usando scrollable_frame como parent)
+        # Sessões de interface
         self.create_basic_info_section()
         self.create_classes_section()
         self.create_attributes_section()
@@ -300,6 +341,9 @@ class FichaDnD:
         self.create_combat_section()
         self.create_health_section()
         self.create_control_buttons()
+
+        # Configurar atalho de teclado para salvar
+        self.root.bind('<Control-s>', self.quick_save)
 
     def create_menu(self):
         """Cria a barra de menu"""
@@ -346,6 +390,7 @@ class FichaDnD:
             var = tk.StringVar()
             if label == "Nível":
                 var.trace('w', self.update_proficiency_bonus)
+                self.level_var = var  # Armazenar a variável de nível para atualização
             entry = ttk.Entry(info_frame, textvariable=var)
             entry.grid(row=i, column=1, padx=5, pady=5, sticky="ew")
             self.basic_info_vars[label] = var
@@ -424,15 +469,39 @@ class FichaDnD:
         frame = ttk.LabelFrame(self.scrollable_frame, text="Classes")
         frame.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
 
+        # Adicionar rótulos no topo
+        ttk.Label(frame, text="Classe").grid(row=0, column=0, padx=5, pady=5)
+        ttk.Label(frame, text="NV").grid(row=0, column=1, padx=5, pady=5)
+        ttk.Label(frame, text="Main").grid(row=0, column=2, padx=5, pady=5)
+
         classes = ["Classe Primária", "Classe Secundária", "Classe Terciária"]
         self.class_vars = {}
+        self.main_class_var = tk.StringVar(value=classes[0])  # Variável para classe principal
+        self.class_level_vars = {}  # Dicionário para armazenar níveis
 
         for i, label in enumerate(classes):
-            ttk.Label(frame, text=label).grid(row=i, column=0, padx=5, pady=5)
+            # Campo de entrada para o nome da classe
             var = tk.StringVar()
             entry = ttk.Entry(frame, textvariable=var)
-            entry.grid(row=i, column=1, padx=5, pady=5)
+            entry.grid(row=i+1, column=0, padx=5, pady=5)
             self.class_vars[label] = var
+
+            # Campo para nível da classe
+            level_var = tk.StringVar(value="1")
+            ttk.Entry(frame, textvariable=level_var, width=5).grid(row=i+1, column=1, padx=5)
+            self.class_level_vars[label] = level_var
+
+            # Adicionando radio button para selecionar a classe principal
+            ttk.Radiobutton(frame, variable=self.main_class_var, value=label, command=self.update_main_class_level).grid(row=i+1, column=2, padx=5)
+
+        # Atualizar o nível básico quando a classe principal mudar
+        self.main_class_var.trace('w', self.update_main_class_level)
+
+    def update_main_class_level(self, *args):
+        """Atualiza o nível básico para corresponder ao nível da classe principal"""
+        main_class = self.main_class_var.get()
+        main_class_level = self.class_level_vars[main_class].get()
+        self.level_var.set(main_class_level)
 
     def create_attributes_section(self):
         frame = ttk.LabelFrame(self.scrollable_frame, text="Atributos")
@@ -492,7 +561,7 @@ class FichaDnD:
 
         # Novo frame para anotações
         notes_frame = ttk.LabelFrame(frame, text="Anotações")
-        notes_frame.pack(side="left", fill="both", expand=True, padx=5)
+        notes_frame.pack(side="left", fill="both", expand=True, padx=5, pady=5)
 
         # Área de texto para anotações
         self.attr_notes = tk.Text(notes_frame, width=30, height=20)
@@ -556,7 +625,7 @@ class FichaDnD:
             total_label = ttk.Label(skill_frame, text="+0")
             total_label.pack(side="left", padx=5)
             
-            # Armazenar todas as variáveis
+            # Armazenar todas as vari��veis
             self.skill_vars[skill] = {
                 "prof1": prof1_var,
                 "prof2": prof2_var,
@@ -679,24 +748,37 @@ class FichaDnD:
         self.spell_attr_var.trace('w', self.update_spell_dc)
         self.cd_bonus_var.trace('w', self.update_spell_dc)
 
-        # Adicionar label para Percepção Passiva
+        # Adicionar label para Percepç����������o Passiva
         ttk.Label(frame, text="Percepção Passiva:").grid(row=4, column=0, padx=5, pady=5)
         self.passive_perception_label = ttk.Label(frame, text="10")
         self.passive_perception_label.grid(row=4, column=1, columnspan=2, padx=5, pady=5)
 
-    def add_cd_bonus(self):
+        # Adicionar campo de taxa de movimento
+        ttk.Label(frame, text="Taxa de Movimento:").grid(row=5, column=0, padx=5, pady=5)
+        self.speed_var = tk.StringVar(value="30")
+        ttk.Entry(frame, textvariable=self.speed_var, width=5).grid(row=5, column=1, padx=5)
+
+        # Adicionar campo de iniciativa
+        ttk.Label(frame, text="Iniciativa:").grid(row=6, column=0, padx=5, pady=5)
+        self.initiative_var = tk.StringVar(value="0")
+        ttk.Entry(frame, textvariable=self.initiative_var, width=5).grid(row=6, column=1, padx=5)
+
+        # Atualizar percepção passiva
+        self.update_passive_perception()
+
+    def add_cd_bonus(self, desc='', value='0'):
         """Adiciona um novo bônus à CD"""
         bonus_frame = ttk.Frame(self.cd_bonus_frame)
         bonus_frame.pack(fill="x", pady=2)
         
         # Descrição do bônus
         ttk.Label(bonus_frame, text="Fonte:").pack(side="left", padx=2)
-        desc_var = tk.StringVar()
+        desc_var = tk.StringVar(value=desc)
         ttk.Entry(bonus_frame, textvariable=desc_var, width=15).pack(side="left", padx=2)
         
         # Valor do bônus
         ttk.Label(bonus_frame, text="Valor:").pack(side="left", padx=2)
-        value_var = tk.StringVar(value="0")
+        value_var = tk.StringVar(value=value)
         entry = ttk.Entry(bonus_frame, textvariable=value_var, width=5)
         entry.pack(side="left", padx=2)
         
@@ -726,9 +808,8 @@ class FichaDnD:
         self.update_spell_dc()
 
     def update_spell_dc(self, *args):
-        """Atualiza o valor total da CD"""
+        """Atualiza o valor total da CD de magias na interface"""
         try:
-            # Base 8 + proficiência + modificador
             base = 8
             prof_bonus = self.get_proficiency_bonus()
             attr_mod = self.get_modifier(self.spell_attr_var.get())
@@ -746,26 +827,25 @@ class FichaDnD:
                 except ValueError:
                     continue
             
-            total = base + prof_bonus + attr_mod + bonus
-            self.cd_label.config(text=f"CD: {total}")
+            total_cd = base + prof_bonus + attr_mod + bonus
+            self.cd_label.config(text=f"CD: {total_cd}")
         except:
             self.cd_label.config(text="CD: 8")
 
-    def add_ac_bonus(self):
+    def add_ac_bonus(self, desc='', value='0'):
         """Adiciona um novo bônus à CA"""
         bonus_frame = ttk.Frame(self.ac_bonus_frame)
         bonus_frame.pack(fill="x", pady=2)
         
         ttk.Label(bonus_frame, text="Fonte:").pack(side="left", padx=2)
-        desc_var = tk.StringVar()
+        desc_var = tk.StringVar(value=desc)
         ttk.Entry(bonus_frame, textvariable=desc_var, width=15).pack(side="left", padx=2)
-        
         ttk.Label(bonus_frame, text="Valor:").pack(side="left", padx=2)
-        value_var = tk.StringVar(value="0")
+        value_var = tk.StringVar(value=value)
         entry = ttk.Entry(bonus_frame, textvariable=value_var, width=5)
         entry.pack(side="left", padx=2)
         
-        # Configurar trace para atualizaç��o automática
+        # Configurar trace para atualização automática
         value_var.trace('w', self.update_ac)
         
         remove_btn = ttk.Button(bonus_frame, text="X", width=2,
@@ -909,6 +989,9 @@ class FichaDnD:
         ttk.Button(frame, text="Tela de Talentos", command=self.open_abilities_screen).grid(row=0, column=1, padx=5, pady=5)
         ttk.Button(frame, text="Inventário", command=self.open_inventory_screen).grid(row=0, column=2, padx=5, pady=5)
         ttk.Button(frame, text="Habilidades", command=self.open_features_screen).grid(row=0, column=3, padx=5, pady=5)
+        ttk.Button(frame, text="Afinidades", command=self.open_affinity_screen).grid(row=0, column=4, padx=5, pady=5)
+        # Adicionar botão para abrir o Grimório
+        ttk.Button(frame, text="Grimório", command=self.open_grimoire_screen).grid(row=0, column=5, padx=5, pady=5)
 
     def open_spells_screen(self):
         SpellScreen(self)
@@ -917,14 +1000,21 @@ class FichaDnD:
         AbilityScreen(self)
 
     def open_inventory_screen(self):
+        """Abre a tela de inventário sem confirmação"""
         InventoryScreen(self)
 
     def open_features_screen(self):
         FeatureScreen(self)
 
+    def open_affinity_screen(self):
+        AffinityScreen(self)
+
+    def open_grimoire_screen(self):
+        GrimoireScreen(self)
+
     def quick_save(self, event=None):
         """Salva rapidamente no arquivo atual ou abre diálogo se não houver arquivo"""
-        if self.current_file_path:
+        if hasattr(self, 'current_file_path') and self.current_file_path:
             self.export_to_json(self.current_file_path)
         else:
             self.export_to_json()
@@ -946,7 +1036,7 @@ class FichaDnD:
                     'filename': os.path.basename(file_path),
                     'photo_data': self.photo_data,  # Armazenar a imagem como base64
                     'basic_info': {key: var.get() for key, var in self.basic_info_vars.items()},
-                    'classes': {key: var.get() for key, var in self.class_vars.items()},
+                    'classes': {key: {'name': var.get(), 'level': self.class_level_vars[key].get()} for key, var in self.class_vars.items()},
                     'attributes': {
                         attr: {
                             'value': var.get(),
@@ -996,6 +1086,24 @@ class FichaDnD:
                             for bonus in self.ac_bonus_list
                         ]
                     },
+                    'combat': {
+                        'initiative': self.initiative_var.get(),
+                        'speed': self.speed_var.get(),
+                        'hit_points': self.hit_points_var.get(),
+                        'temp_hit_points': self.temp_hit_points_var.get(),
+                        # Adicione outros dados de combate conforme necessário
+                    },
+                    'spell_dc': {
+                        'attr': self.spell_attr_var.get(),
+                        'bonus': self.cd_bonus_var.get(),
+                        'bonus_list': [
+                            {
+                                'desc': bonus['desc'].get(),
+                                'value': bonus['value'].get()
+                            }
+                            for bonus in self.cd_bonus_list
+                        ]
+                    },
                 }
 
                 # Salvar JSON
@@ -1012,128 +1120,167 @@ class FichaDnD:
                 messagebox.showerror("Erro", f"Erro ao salvar a ficha: {str(e)}")
 
     def import_from_json(self, file_path=None):
-        """Importa dados de um arquivo JSON"""
+        """Importa os dados de um arquivo JSON"""
         if not file_path:
             file_path = filedialog.askopenfilename(
                 filetypes=[("JSON Files", "*.json")],
-                initialfile="ficha_dnd.json"
+                title="Importar de JSON"
             )
         
         if file_path:
+            # Usar a nova função de confirmação simples
+            if not self.simple_confirm_action("Deseja importar? As alterações não salvas serão perdidas."):
+                return
             try:
                 with open(file_path, 'r', encoding='utf-8') as file:
                     data = json.load(file)
-
-                # Carregar imagem se existir
+                
+                # Corrigir possíveis problemas de codificação
+                classes_data = data.get('classes', {})
+                for class_label, class_info in zip(
+                    ["Classe Primária", "Classe Secundária", "Classe Terciária"],
+                    classes_data.values()
+                ):
+                    if isinstance(class_info, dict):
+                        self.class_vars[class_label].set(class_info.get('name', ''))
+                        self.class_level_vars[class_label].set(class_info.get('level', '1'))
+                
+                # Atualizar dados da interface
                 self.photo_data = data.get('photo_data', None)
-                self.load_existing_photo()
+                if self.photo_data:
+                    self.load_photo(self.photo_data)
+                
+                basic_info = data.get('basic_info', {})
+                if isinstance(basic_info, dict):
+                    self.basic_info_vars['Nome'].set(basic_info.get('Nome', ''))
+                    self.basic_info_vars['Raça'].set(basic_info.get('Raça', ''))
+                    self.basic_info_vars['Antecedente'].set(basic_info.get('Antecedente', ''))
+                    self.basic_info_vars['Nível'].set(basic_info.get('Nível', ''))
+                
+                classes_data = data.get('classes', {})
+                for class_label, class_info in zip(
+                    ["Classe Primária", "Classe Secundária", "Classe Terciária"],
+                    classes_data.values()
+                ):
+                    if isinstance(class_info, dict):
+                        self.class_vars[class_label].set(class_info.get('name', ''))
+                        self.class_level_vars[class_label].set(class_info.get('level', '1'))
+                
+                # Definir classe principal na interface
+                main_class = data.get('main_class', 'Classe Primária')
+                self.main_class_var.set(main_class)
 
-                # Carregar informações básicas
-                for key, value in data.get('basic_info', {}).items():
-                    if key in self.basic_info_vars:
-                        self.basic_info_vars[key].set(value)
-
-                # Carregar classes
-                for key, value in data.get('classes', {}).items():
-                    if key in self.class_vars:
-                        self.class_vars[key].set(value)
-
-                # Carregar atributos
-                for attr, value in data.get('attributes', {}).items():
-                    if attr in self.attribute_vars:
-                        if isinstance(value, dict):
-                            self.attribute_vars[attr].set(value.get('value', '10'))
-                            if attr in self.save_vars:
-                                self.save_vars[attr].set(value.get('save_proficiency', False))
-                        else:
-                            # Para compatibilidade com versões antigas
-                            self.attribute_vars[attr].set(value)
-
-                # Carregar anotações de atributos
-                if 'attribute_notes' in data:
-                    self.attr_notes.delete('1.0', tk.END)
-                    self.attr_notes.insert('1.0', data['attribute_notes'])
-
-                # Carregar perícias
-                for skill, skill_data in data.get('skills', {}).items():
-                    if skill in self.skill_vars:
+                # Atualizar o restante da interface conforme necessário
+                self.update_main_class_level()  # Atualiza o nível básico baseado na classe principal
+                
+                # Atualizar atributos
+                attributes = data.get('attributes', {})
+                if isinstance(attributes, dict):
+                    for attr, attr_data in attributes.items():
+                        if isinstance(attr_data, dict):
+                            self.attribute_vars[attr].set(attr_data.get('value', ''))
+                            self.save_vars[attr].set(attr_data.get('save_proficiency', False))
+                
+                # Atualizar notas de atributos
+                self.attr_notes.delete('1.0', tk.END)
+                self.attr_notes.insert('1.0', data.get('attribute_notes', ''))
+                
+                # Atualizar perícias
+                skills = data.get('skills', {})
+                if isinstance(skills, dict):
+                    for skill, skill_data in skills.items():
                         if isinstance(skill_data, dict):
                             self.skill_vars[skill]['prof1'].set(skill_data.get('prof1', False))
                             self.skill_vars[skill]['prof2'].set(skill_data.get('prof2', False))
                             self.skill_vars[skill]['bonus'].set(skill_data.get('bonus', '0'))
-
-                # Carregar recursos
-                for resource, value in data.get('resources', {}).items():
-                    if resource in self.resources_vars:
-                        self.resources_vars[resource].set(value.get('atual', '0'))
-                        self.resources_max_vars[resource].set(value.get('max', '0'))
-
-                # Carregar recursos customizados
-                self.clear_custom_resources()
-                for custom_resource in data.get('custom_resources', []):
-                    self.add_custom_resource()
-                    last_resource = self.custom_resources[-1]
-                    last_resource['name'].set(custom_resource.get('name', ''))
-                    last_resource['atual'].set(custom_resource.get('atual', '0'))
-                    last_resource['max'].set(custom_resource.get('max', '0'))
-
-                # Carregar dados adicionais
+                
+                # Atualizar recursos
+                resources = data.get('resources', {})
+                if isinstance(resources, dict):
+                    for resource, values in resources.items():
+                        if isinstance(values, dict):
+                            self.resources_vars[resource].set(values.get('atual', ''))
+                            self.resources_max_vars[resource].set(values.get('max', ''))
+                
+                # Atualizar CA
+                ac_data = data.get('armor_class', {})
+                if isinstance(ac_data, dict):
+                    self.base_ac_var.set(ac_data.get('base', '10'))
+                    self.ac_attr_var.set(ac_data.get('attr', 'DES'))
+                    self.ac_bonus_var.set(ac_data.get('bonus', '0'))
+                    # Limpar bônus existentes
+                    for bonus in self.ac_bonus_list:
+                        bonus['frame'].destroy()
+                    self.ac_bonus_list.clear()
+                    # Recriar lista de bônus
+                    for bonus_data in ac_data.get('bonus_list', []):
+                        self.add_ac_bonus(bonus_data['desc'], bonus_data['value'])
+                
+                # Atualizar CD de Magias
+                cd_data = data.get('spell_dc', {})
+                if isinstance(cd_data, dict):
+                    self.spell_attr_var.set(cd_data.get('attr', 'INT'))
+                    self.cd_bonus_var.set(cd_data.get('bonus', '0'))
+                    # Limpar bônus existentes
+                    for bonus in self.cd_bonus_list:
+                        bonus['frame'].destroy()
+                    self.cd_bonus_list.clear()
+                    # Recriar lista de bônus
+                    for bonus_data in cd_data.get('bonus_list', []):
+                        self.add_cd_bonus(bonus_data['desc'], bonus_data['value'])
+                
+                # Atualizar informações de combate
+                combat_info = data.get('combat', {})
+                if isinstance(combat_info, dict):
+                    self.initiative_var.set(combat_info.get('initiative', ''))
+                    self.speed_var.set(combat_info.get('speed', ''))
+                    self.hit_points_var.set(combat_info.get('hit_points', '0'))  # Define pontos de vida como '0' se não estiver presente
+                    self.temp_hit_points_var.set(combat_info.get('temp_hit_points', '0'))  # Define pontos de vida temporários como '0' se não estiver presente
+                
+                # Atualizar dados de magias, talentos, habilidades e inventário
                 self.spells_data = data.get('spells', [])
                 self.abilities_data = data.get('abilities', [])
                 self.features_data = data.get('features', [])
                 self.inventory_data = data.get('inventory', [])
+                
+                # Atualizar dados de background
                 self.background_data = data.get('background', {})
+                if isinstance(self.background_data, dict):
+                    # Atualizar informações de identidade
+                    for key, value in self.background_data.get('identity', {}).items():
+                        if key in self.identity_vars:
+                            self.identity_vars[key].set(value)
+                    
+                    # Atualizar textos
+                    for key, text in self.background_data.get('texts', {}).items():
+                        if key in self.text_widgets:
+                            self.text_widgets[key].delete("1.0", tk.END)
+                            self.text_widgets[key].insert("1.0", text)
+                    
+                    # Atualizar alinhamento
+                    alignment = self.background_data.get('alignment', {})
+                    self.moral_var.set(alignment.get('moral', ''))
+                    self.order_var.set(alignment.get('order', ''))
 
-                # Atualizar caminho do arquivo atual
-                self.current_file_path = file_path
-                # Atualizar título da janela
-                self.root.title(f"Ficha de D&D 5.5E - {os.path.basename(file_path)}")
-
-                # Carregar dados da CA
-                ac_data = data.get('armor_class', {})
-                self.base_ac_var.set(ac_data.get('base', '10'))
-                self.ac_attr_var.set(ac_data.get('attr', 'DES'))
-                self.ac_bonus_var.set(ac_data.get('bonus', '0'))
-                
-                # Limpar e recarregar bônus extras da CA
-                for bonus in self.ac_bonus_list:
-                    bonus['frame'].destroy()
-                self.ac_bonus_list.clear()
-                
-                for bonus in ac_data.get('bonus_list', []):
-                    self.add_ac_bonus()
-                    last_bonus = self.ac_bonus_list[-1]
-                    last_bonus['desc'].set(bonus.get('desc', ''))
-                    last_bonus['value'].set(bonus.get('value', '0'))
-                
-                # Atualizar CA total
-                self.update_ac()
-
-                # Atualizar todos os cálculos
+                self.update_classes_interface()
                 self.update_all()
-
-                messagebox.showinfo("Sucesso", "Ficha carregada com sucesso!")
-
+                messagebox.showinfo("Sucesso", "Dados importados com sucesso!")
+            
             except Exception as e:
-                messagebox.showerror("Erro", f"Erro ao importar a ficha: {str(e)}")
-                import traceback
-                traceback.print_exc()
+                traceback.print_exc()  # Imprime o rastreamento completo do erro no console
+                messagebox.showerror("Erro", f"Erro ao importar JSON: {str(e)}")
 
-    def load_existing_photo(self):
-        """Carrega uma foto existente a partir dos dados em base64"""
+    def load_photo(self, photo_data):
+        """Carrega a foto do personagem a partir de dados base64"""
         try:
-            if self.photo_data:
-                image_data = base64.b64decode(self.photo_data)
-                image = Image.open(io.BytesIO(image_data))
-                image = image.resize((150, 150), Image.Resampling.LANCZOS)
-                photo = ImageTk.PhotoImage(image)
-                self.photo_canvas.delete("all")
-                self.photo_canvas.create_image(0, 0, anchor="nw", image=photo)
-                self.photo_image = photo  # Manter referência para evitar garbage collection
-            else:
-                self.set_default_photo()
+            image_data = base64.b64decode(photo_data)
+            image = Image.open(io.BytesIO(image_data))
+            photo = ImageTk.PhotoImage(image)
+            self.photo_canvas.delete("all")
+            self.photo_canvas.create_image(0, 0, anchor="nw", image=photo)
+            self.photo_image = photo
         except Exception as e:
-            print(f"Erro ao carregar foto: {str(e)}")
+            messagebox.showerror("Erro", f"Erro ao carregar imagem: {str(e)}")
             self.set_default_photo()
 
     def save_last_file_path(self, file_path):
@@ -1169,12 +1316,34 @@ class FichaDnD:
             resource['frame'].destroy()
         self.custom_resources.clear()
 
+    def update_classes_interface(self):
+        """Atualiza as informações de classes na interface com base nos dados armazenados."""
+        try:
+            # Iterar pelas classes: Primária, Secundária e Terciária
+            for class_label in ["Classe Primária", "Classe Secundária", "Classe Terciária"]:
+                class_name = self.class_vars[class_label].get()
+                class_level = self.class_level_vars[class_label].get()
+
+                # Atualizar os campos de entrada na interface
+                self.class_vars[class_label].set(class_name)
+                self.class_level_vars[class_label].set(class_level)
+            
+            # Atualizar a classe principal na interface
+            main_class = self.main_class_var.get()
+            self.main_class_var.set(main_class)
+
+            # Sincronizar o nível básico com o nível da classe principal
+            self.update_main_class_level()
+        except Exception as e:
+            messagebox.showerror("Erro", f"Erro ao atualizar as classes na interface: {e}")
+
+    
     def update_all(self):
         """Atualiza todos os valores calculados"""
         # Atualizar modificadores de atributos
         for attr in ["FOR", "DES", "CON", "INT", "SAB", "CAR"]:
             self.update_modifiers(attr)  
-        
+        self.update_classes_interface()
         # Atualizar bônus de proficiência
         self.update_proficiency_bonus()
         
@@ -1187,10 +1356,20 @@ class FichaDnD:
             self.update_spell_dc()
         
         # Atualizar perícias
-        self.update_skills()  # Removido o argumento skill_data
+        self.update_skills()
         
         # Atualizar percepção passiva
         self.update_passive_perception()
+        
+        # Atualizar informações de combate
+        self.update_combat_info()  # Adicione este método para atualizar informações de combate
+
+    def update_combat_info(self):
+        """Atualiza as informações de combate na interface"""
+        self.ac_label.config(text=f"CA Total: {self.calculate_ac()}")
+        self.update_spell_dc()  # Atualiza o valor da CD de magias
+        self.update_passive_perception()  # Atualiza a percepção passiva
+        # Atualize outros campos de combate conforme necessário
 
     def update_modifiers(self, attr):
         try:
@@ -1246,33 +1425,11 @@ class FichaDnD:
             return 0
 
     def update_passive_perception(self):
-        """Atualiza o valor da percepção passiva"""
+        """Atualiza o valor da percepção passiva na interface"""
         try:
-            # Base 10 + modificador de Sabedoria + bônus de proficiência se aplicável
-            wis_mod = self.get_modifier("SAB")
-            base = 10
-            bonus = 0
-            
-            # Verificar proficiência em Percepção
-            if "Percepção" in self.skill_vars:
-                skill_data = self.skill_vars["Percepção"]
-                prof_bonus = self.get_proficiency_bonus()
-                
-                if skill_data['prof1'].get():
-                    bonus += prof_bonus
-                if skill_data['prof2'].get():
-                    bonus += prof_bonus
-                    
-                # Adicionar bônus extra da perícia
-                try:
-                    bonus += int(skill_data['bonus'].get() or 0)
-                except ValueError:
-                    pass
-            
-            passive = base + wis_mod + bonus
-            self.passive_perception_label.config(text=str(passive))
-        except Exception as e:
-            print(f"Erro ao atualizar percepção passiva: {str(e)}")
+            perception_bonus = self.get_modifier("SAB") + self.get_proficiency_bonus()
+            self.passive_perception_label.config(text=str(10 + perception_bonus))
+        except:
             self.passive_perception_label.config(text="10")
 
     def get_proficiency_bonus(self):
@@ -1349,7 +1506,7 @@ class FichaDnD:
             for attr, var in self.attribute_vars.items():
                 mod = self.modifier_labels[attr].cget('text')
                 save = self.save_labels[attr].cget('text')
-                prof = "✓" if self.save_vars[attr].get() else "□"
+                prof = "✓" if self.save_vars[attr].get() else "��"
                 c.drawString(50, y, f"{attr}: {var.get()} {mod} | Save: {save} {prof}")
                 y -= 20
 
@@ -1521,6 +1678,22 @@ class FichaDnD:
                     y -= 15
                 y -= 10
 
+            # Informações de combate
+            y -= 20
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(50, y, "INFORMAÇÕES DE COMBATE")
+            c.setFont("Helvetica", 12)
+            y -= 20
+            c.drawString(50, y, f"CA Total: {self.calculate_ac()}")
+            y -= 20
+            c.drawString(50, y, f"CD: {self.calculate_spell_dc()}")
+            y -= 20
+            c.drawString(50, y, f"Percepção Passiva: {self.calculate_passive_perception()}")
+            y -= 20
+            c.drawString(50, y, f"Iniciativa: {self.initiative_var.get()}")
+            y -= 20
+            c.drawString(50, y, f"Movimento: {self.speed_var.get()}")
+
             c.save()
             messagebox.showinfo("Sucesso", "PDF exportado com sucesso!")
 
@@ -1676,7 +1849,7 @@ class FichaDnD:
         # Atualizar habilidades
         self.features_data = data['features']
         
-        # Atualizar inventário
+        # Atualizar invent�������rio
         self.inventory_data = data['inventory']
         
         # Atualizar recursos
@@ -1751,8 +1924,93 @@ class FichaDnD:
         self.update_ac()
 
     def open_background_screen(self):
-        """Abre a tela de background do personagem"""
-        BackgroundScreen(self)
+        """Abre a tela de background"""
+        if not hasattr(self, 'background_screen'):
+            self.background_screen = BackgroundScreen(self)
+        else:
+            self.background_screen.window.deiconify()
+
+    def open_affinity_screen(self):
+        AffinityScreen(self)
+
+    def save_data(self, event=None):
+        """Salva os dados atuais no arquivo JSON."""
+        # Implementação do método de salvar
+        # ... existing save logic ...
+
+    def confirm_action(self, message):
+        """Exibe uma mensagem de confirmação antes de realizar uma ação."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Confirmação")
+        dialog.geometry("300x150")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ttk.Label(dialog, text=message, wraplength=250).pack(pady=10)
+
+        # Variável para armazenar o resultado
+        result = tk.StringVar(value="cancel")
+
+        def on_save_and_exit():
+            result.set("save_and_exit")
+            dialog.quit()
+
+        def on_exit():
+            result.set("exit")
+            dialog.quit()
+
+        def on_cancel():
+            result.set("cancel")
+            dialog.quit()
+
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=10)
+
+        ttk.Button(button_frame, text="Salvar e Sair", command=on_save_and_exit).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="Sair", command=on_exit).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="Cancelar", command=on_cancel).pack(side="left", padx=5)
+
+        dialog.mainloop()
+        dialog.grab_release()
+
+        return result.get()
+
+    def close_main_window(self):
+        """Fecha a janela principal com confirmação"""
+        action = self.confirm_action("Deseja realmente sair? As alterações não salvas serão perdidas.")
+        if action == "save_and_exit":
+            self.save_data()  # Assumindo que você tem um método para salvar os dados
+            self.root.destroy()
+        elif action == "exit":
+            self.root.destroy()
+
+    def simple_confirm_action(self, message):
+        """Exibe uma mensagem de confirmação simples."""
+        return messagebox.askyesno("Confirmação", message)
+
+    def calculate_ac(self):
+        """Calcula a Classe de Armadura (CA) total."""
+        try:
+            base_ac = int(self.base_ac_var.get() or 10)
+            attr_mod = self.get_modifier(self.ac_attr_var.get())
+            
+            # Bônus adicional padrão
+            try:
+                bonus = int(self.ac_bonus_var.get() or 0)
+            except ValueError:
+                bonus = 0
+                
+            # Somar bônus extras
+            for bonus_data in self.ac_bonus_list:
+                try:
+                    bonus += int(bonus_data['value'].get() or 0)
+                except ValueError:
+                    continue
+            
+            total_ac = base_ac + attr_mod + bonus
+            return total_ac
+        except:
+            return 10  # Valor padrão se ocorrer um erro
 
 def center_window(window, width, height):
     """Centraliza uma janela na tela, considerando a barra de tarefas"""
@@ -1884,11 +2142,12 @@ class SpellScreen:
             ("Alcance", "entry"),
             ("Componentes", "entry"),
             ("Duração", "entry"),
+            ("Custo de Mana", "entry"),  # Novo campo
             ("Teste de Resistência", "combo", ["Nenhum", "Força", "Destreza", "Constituição", 
                                              "Inteligência", "Sabedoria", "Carisma"]),
             ("Dano/Efeito", "entry"),
             ("Descrição", "text"),
-            ("Em Níveis Superiores", "text")  # Novo campo
+            ("Em Níveis Superiores", "text")
         ]
         
         row = 0
@@ -1939,37 +2198,50 @@ class SpellScreen:
         return entries
 
     def save_spell(self, entries):
-        spell = {
-            'nome': entries['Nome'].get(),
-            'nivel': int(entries['Nível'].get() or 0),
-            'escola': entries['Escola'].get(),
-            'preparada': entries['Preparada'].get(),
-            'tempo_conjuracao': entries['Tempo de Conjuração'].get(),
-            'alcance': entries['Alcance'].get(),
-            'componentes': entries['Componentes'].get(),
-            'duracao': entries['Duração'].get(),
-            'teste_resistencia': entries['Teste de Resistência'].get(),
-            'dano_efeito': entries['Dano/Efeito'].get(),
-            'descricao': entries['Descrição'].get("1.0", tk.END).strip(),
-            'niveis_superiores': entries['Em Níveis Superiores'].get("1.0", tk.END).strip()  # Novo campo
-        }
+        """Salva uma magia nova ou atualiza uma existente"""
+        try:
+            # Normalizar dados
+            spell = {
+                'nome': entries['Nome'].get().strip(),
+                'nivel': int(entries['Nível'].get().strip() or 0),
+                'escola': entries['Escola'].get().strip(),
+                'preparada': entries['Preparada'].get(),
+                'tempo_conjuracao': entries['Tempo de Conjuração'].get().strip(),
+                'alcance': entries['Alcance'].get().strip(),
+                'componentes': entries['Componentes'].get().strip(),
+                'duracao': entries['Duração'].get().strip(),
+                'custo_mana': entries['Custo de Mana'].get().strip(),  # Novo campo
+                'teste_resistencia': entries['Teste de Resist��ncia'].get().strip(),
+                'dano_efeito': entries['Dano/Efeito'].get().strip(),
+                'descricao': entries['Descrição'].get("1.0", tk.END).strip(),
+                'niveis_superiores': entries['Em Níveis Superiores'].get("1.0", tk.END).strip()
+            }
 
-        # Atualizar magia existente ou adicionar nova
-        selected = self.get_selected_spell()
-        if selected:
-            # Encontrar e atualizar magia existente
-            for i, existing_spell in enumerate(self.spells_data):
-                if existing_spell['nome'] == selected['nome']:
-                    self.spells_data[i] = spell
-                    break
-        else:
-            # Adicionar nova magia
-            self.spells_data.append(spell)
+            if not spell['nome']:
+                messagebox.showerror("Erro", "O nome da magia é obrigatório")
+                return
 
-        # Atualizar listas
-        self.load_spells()
-        self.clear_form()
-        messagebox.showinfo("Sucesso", "Magia salva com sucesso!")
+            # Verificar se é uma atualização ou nova magia
+            selected = self.get_selected_spell()
+            if selected:
+                # Atualizar magia existente
+                for i, existing_spell in enumerate(self.spells_data):
+                    if existing_spell['nome'].strip().lower() == selected['nome'].strip().lower():
+                        self.spells_data[i] = spell
+                        break
+            else:
+                # Adicionar nova magia
+                self.spells_data.append(spell)
+
+            # Atualizar a lista principal no parent
+            self.parent.spells_data = self.spells_data
+
+            # Recarregar listas
+            self.load_spells()
+            self.clear_form()
+            messagebox.showinfo("Sucesso", "Magia salva com sucesso!")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Erro ao salvar magia: {str(e)}")
 
     def get_selected_spell(self):
         """Retorna a magia selecionada em qualquer uma das listas"""
@@ -1991,7 +2263,7 @@ class SpellScreen:
                 spell_name = spell_text.split(' ', 1)[-1].strip()  # Remove o status
         
         if spell_name:
-            return next((s for s in self.spells_data if s['nome'] == spell_name), None)
+            return next((s for s in self.spells_data if s['nome'].strip().lower() == spell_name.lower()), None)
         return None
 
     def clear_form(self):
@@ -2022,22 +2294,21 @@ class SpellScreen:
 
         # Organizar magias por nível
         self.all_spells = {i: [] for i in range(10)}
-        for spell in self.spells_data:
+        for index, spell in enumerate(self.spells_data):
             level = spell.get('nivel', 0)
             self.all_spells[level].append(spell)
 
-        # Atualizar lista "Todas"
-        for spell in self.spells_data:
+            # Calcular a página da magia
+            page_number = (index // 2) + 1
+
+            # Atualizar lista "Todas"
             prepared = '✓' if spell.get('preparada', False) else ' '
-            display_text = f"[{spell['nivel']}] {prepared} {spell['nome']}"
+            display_text = f"[{spell['nivel']}] {prepared} {spell['nome']} (Página {page_number})"
             self.spell_lists['all'].insert(tk.END, display_text)
 
-        # Atualizar listas por nível
-        for level, spells in self.all_spells.items():
-            for spell in spells:
-                prepared = '✓' if spell.get('preparada', False) else ' '
-                display_text = f"{prepared} {spell['nome']}"
-                self.spell_lists[level].insert(tk.END, display_text)
+            # Atualizar listas por nível
+            display_text = f"{prepared} {spell['nome']} (Página {page_number})"
+            self.spell_lists[level].insert(tk.END, display_text)
 
     def filter_spells(self, *args):
         """Filtra as magias com base na busca e no status de preparada"""
@@ -2074,45 +2345,42 @@ class SpellScreen:
             display_text = f"{prepared_mark} {spell['nome']}"
             self.spell_lists[level].insert(tk.END, display_text)
 
-    def load_spells(self):
-        """Carrega todas as magias nas listas"""
-        # Organizar magias por nível
-        self.all_spells = {i: [] for i in range(10)}
-        for spell in self.spells_data:
-            level = spell.get('nivel', 0)
-            self.all_spells[level].append(spell)
-        
-        # Aplicar filtros
-        self.filter_spells()
-
     def on_spell_select(self, event):
         """Manipula o evento de seleção de uma magia na lista"""
-        selected_spell = self.get_selected_spell()
-        if not selected_spell:
-            return
+        try:
+            selected_spell = self.get_selected_spell()
+            if not selected_spell:
+                return
+                
+            # Limpar o formulário antes de carregar os novos dados
+            self.clear_form()
             
-        # Limpar o formulário antes de carregar os novos dados
-        self.clear_form()
-        
-        # Preencher os campos com os dados da magia
-        form = self.spell_form
-        form['Nome'].set(selected_spell.get('nome', ''))
-        form['Nível'].set(str(selected_spell.get('nivel', '0')))
-        form['Escola'].set(selected_spell.get('escola', ''))
-        form['Preparada'].set(selected_spell.get('preparada', False))
-        form['Tempo de Conjuração'].set(selected_spell.get('tempo_conjuracao', ''))
-        form['Alcance'].set(selected_spell.get('alcance', ''))
-        form['Componentes'].set(selected_spell.get('componentes', ''))
-        form['Duração'].set(selected_spell.get('duracao', ''))
-        form['Teste de Resistência'].set(selected_spell.get('teste_resistencia', 'Nenhum'))
-        form['Dano/Efeito'].set(selected_spell.get('dano_efeito', ''))
-        
-        # Para campos de texto (Text widget)
-        form['Descrição'].delete('1.0', tk.END)
-        form['Descrição'].insert('1.0', selected_spell.get('descricao', ''))
-        
-        form['Em Níveis Superiores'].delete('1.0', tk.END)
-        form['Em Níveis Superiores'].insert('1.0', selected_spell.get('niveis_superiores', ''))
+            # Preencher os campos com os dados da magia
+            form = self.spell_form
+            form['Nome'].set(selected_spell.get('nome', ''))
+            form['Nível'].set(str(selected_spell.get('nivel', '0')))
+            form['Escola'].set(selected_spell.get('escola', ''))
+            form['Preparada'].set(selected_spell.get('preparada', False))
+            form['Tempo de Conjuração'].set(selected_spell.get('tempo_conjuracao', ''))
+            form['Alcance'].set(selected_spell.get('alcance', ''))
+            form['Componentes'].set(selected_spell.get('componentes', ''))
+            form['Duração'].set(selected_spell.get('duracao', ''))
+            form['Custo de Mana'].set(selected_spell.get('custo_mana', ''))
+            form['Teste de Resistência'].set(selected_spell.get('teste_resistencia', 'Nenhum'))
+            form['Dano/Efeito'].set(selected_spell.get('dano_efeito', ''))
+            
+            # Para campos de texto (Text widget)
+            form['Descrição'].delete('1.0', tk.END)
+            form['Descrição'].insert('1.0', selected_spell.get('descricao', ''))
+            
+            form['Em Níveis Superiores'].delete('1.0', tk.END)
+            form['Em Níveis Superiores'].insert('1.0', selected_spell.get('niveis_superiores', ''))
+            
+            # Atualizar a interface
+            self.window.update_idletasks()
+            
+        except Exception as e:
+            print(f"Erro ao carregar magia: {str(e)}")
 
 class AbilityScreen:
     def __init__(self, parent):
@@ -2269,177 +2537,181 @@ class InventoryScreen:
         self.parent = parent
         self.window = tk.Toplevel(parent.root)
         self.window.title("Inventário")
-        self.window.geometry("1000x600")
-        
-        # Dados do inventário
-        self.inventory_data = getattr(parent, 'inventory_data', [])
-        parent.inventory_data = self.inventory_data
-        
-        # Criar interface
-        self.create_interface()
-        self.load_inventory()
-
-    def create_interface(self):
-        # Frame principal dividido em duas partes
-        list_frame = ttk.Frame(self.window)
-        list_frame.pack(side="left", fill="both", expand=True, padx=5, pady=5)
-        
-        form_frame = ttk.Frame(self.window)
-        form_frame.pack(side="right", fill="both", padx=5, pady=5)
+        self.window.geometry("800x600")
 
         # Lista de itens
-        ttk.Label(list_frame, text="Itens do Inventário").pack(anchor="w")
-        
-        list_container = ttk.Frame(list_frame)
-        list_container.pack(fill="both", expand=True)
-        
-        self.item_list = tk.Listbox(list_container, width=40, height=20)
-        self.item_list.pack(side="left", fill="both", expand=True)
+        self.item_list = tk.Listbox(self.window)
+        self.item_list.pack(side="left", fill="y", padx=5, pady=5)
         self.item_list.bind('<<ListboxSelect>>', self.on_select_item)
-        
-        scrollbar = ttk.Scrollbar(list_container, orient="vertical", command=self.item_list.yview)
-        scrollbar.pack(side="right", fill="y")
+
+        # Scrollbar para a lista de itens
+        scrollbar = ttk.Scrollbar(self.window, orient="vertical", command=self.item_list.yview)
+        scrollbar.pack(side="left", fill="y")
         self.item_list.config(yscrollcommand=scrollbar.set)
 
-        # Formulário
-        form = ttk.LabelFrame(form_frame, text="Detalhes do Item")
-        form.pack(fill="both", expand=True)
+        # Frame para o formulário de edição
+        form_frame = ttk.Frame(self.window)
+        form_frame.pack(side="right", fill="both", expand=True, padx=5, pady=5)
 
-        # Campos básicos
-        basic_frame = ttk.Frame(form)
-        basic_frame.pack(fill="x", padx=5, pady=5)
-
-        ttk.Label(basic_frame, text="Nome:").grid(row=0, column=0, padx=5, pady=2)
+        # Campos do formulário
         self.name_var = tk.StringVar()
-        ttk.Entry(basic_frame, textvariable=self.name_var, width=30).grid(row=0, column=1, padx=5, pady=2)
+        ttk.Label(form_frame, text="Nome:").pack(anchor="w")
+        ttk.Entry(form_frame, textvariable=self.name_var).pack(fill="x", padx=5, pady=2)
 
-        ttk.Label(basic_frame, text="Tipo:").grid(row=1, column=0, padx=5, pady=2)
-        self.type_var = tk.StringVar()
-        ttk.Combobox(basic_frame, textvariable=self.type_var, 
-                     values=["Arma", "Armadura", "Item Mágico", "Consumível", "Outro"],
-                     width=27).grid(row=1, column=1, padx=5, pady=2)
+        # Frame para tipos de dano
+        self.damage_types_frame = ttk.Frame(form_frame)
+        self.damage_types_frame.pack(fill="x", padx=5, pady=5)
 
-        # Frame para bônus
-        bonus_frame = ttk.LabelFrame(form, text="Bônus")
-        bonus_frame.pack(fill="x", padx=5, pady=5)
+        ttk.Label(self.damage_types_frame, text="Tipos de Dano:").pack(anchor="w")
 
-        # Bônus de atributos
-        attrs_frame = ttk.Frame(bonus_frame)
-        attrs_frame.pack(fill="x", padx=5, pady=5)
-        
-        self.attr_vars = {}
-        attrs = ["FOR", "DES", "CON", "INT", "SAB", "CAR"]
-        for i, attr in enumerate(attrs):
-            ttk.Label(attrs_frame, text=attr).grid(row=i//3, column=(i%3)*2, padx=5, pady=2)
-            var = tk.StringVar(value="0")
-            ttk.Entry(attrs_frame, textvariable=var, width=5).grid(row=i//3, column=(i%3)*2+1, padx=5, pady=2)
-            self.attr_vars[attr] = var
+        self.damage_types = []
 
-        # Outros bônus
-        other_bonus_frame = ttk.Frame(bonus_frame)
-        other_bonus_frame.pack(fill="x", padx=5, pady=5)
+        # Botão para adicionar tipo de dano
+        ttk.Button(self.damage_types_frame, text="Adicionar Tipo de Dano", command=self.add_damage_type).pack(anchor="w", padx=5, pady=2)
 
-        ttk.Label(other_bonus_frame, text="CA:").grid(row=0, column=0, padx=5, pady=2)
-        self.ac_bonus_var = tk.StringVar(value="0")
-        ttk.Entry(other_bonus_frame, textvariable=self.ac_bonus_var, width=5).grid(row=0, column=1, padx=5, pady=2)
+        self.acerto_bonus_var = tk.StringVar()
+        ttk.Label(form_frame, text="Bônus de Acerto:").pack(anchor="w")
+        ttk.Entry(form_frame, textvariable=self.acerto_bonus_var).pack(fill="x", padx=5, pady=2)
 
-        ttk.Label(other_bonus_frame, text="CD:").grid(row=0, column=2, padx=5, pady=2)
-        self.cd_bonus_var = tk.StringVar(value="0")
-        ttk.Entry(other_bonus_frame, textvariable=self.cd_bonus_var, width=5).grid(row=0, column=3, padx=5, pady=2)
+        self.weight_var = tk.StringVar()
+        ttk.Label(form_frame, text="Peso:").pack(anchor="w")
+        ttk.Entry(form_frame, textvariable=self.weight_var).pack(fill="x", padx=5, pady=2)
 
-        # Frame para dano (se for arma)
-        damage_frame = ttk.LabelFrame(form, text="Dano")
-        damage_frame.pack(fill="x", padx=5, pady=5)
+        # Frame para cristais
+        crystal_frame = ttk.Frame(form_frame)
+        crystal_frame.pack(anchor="w", padx=5, pady=2)
 
-        ttk.Label(damage_frame, text="Dados de Dano:").grid(row=0, column=0, padx=5, pady=2)
-        self.damage_dice_var = tk.StringVar()
-        ttk.Entry(damage_frame, textvariable=self.damage_dice_var, width=10).grid(row=0, column=1, padx=5, pady=2)
+        self.saint_crystal_var = tk.StringVar()
+        ttk.Label(crystal_frame, text="Saint:").pack(side="left", padx=2)
+        ttk.Entry(crystal_frame, textvariable=self.saint_crystal_var, width=4).pack(side="left", padx=2)
 
-        ttk.Label(damage_frame, text="Tipo de Dano:").grid(row=0, column=2, padx=5, pady=2)
-        self.damage_type_var = tk.StringVar()
-        ttk.Combobox(damage_frame, textvariable=self.damage_type_var,
-                     values=["Cortante", "Perfurante", "Contundente", "Fogo", "Gelo", "Elétrico", "Ácido", "Veneno", "Psíquico", "Necrótico", "Radiante"],
-                     width=15).grid(row=0, column=3, padx=5, pady=2)
+        self.qi_crystal_var = tk.StringVar()
+        ttk.Label(crystal_frame, text="Qi:").pack(side="left", padx=2)
+        ttk.Entry(crystal_frame, textvariable=self.qi_crystal_var, width=4).pack(side="left", padx=2)
 
-        # Descrição
-        desc_frame = ttk.LabelFrame(form, text="Descrição")
-        desc_frame.pack(fill="both", expand=True, padx=5, pady=5)
+        self.pure_crystal_var = tk.StringVar()
+        ttk.Label(crystal_frame, text="Puro:").pack(side="left", padx=2)
+        ttk.Entry(crystal_frame, textvariable=self.pure_crystal_var, width=4).pack(side="left", padx=2)
 
-        self.description_text = tk.Text(desc_frame, height=6, width=40)
-        self.description_text.pack(fill="both", expand=True, padx=5, pady=5)
+        # Campo de descrição
+        ttk.Label(form_frame, text="Descrição:").pack(anchor="w")
+        self.description_text = tk.Text(form_frame, wrap=tk.WORD, height=5)
+        self.description_text.pack(fill="x", padx=5, pady=2)
 
         # Botões de controle
-        button_frame = ttk.Frame(form)
+        button_frame = ttk.Frame(form_frame)
         button_frame.pack(fill="x", padx=5, pady=5)
 
         ttk.Button(button_frame, text="Salvar Item", command=self.save_item).pack(side="left", padx=5)
         ttk.Button(button_frame, text="Novo Item", command=self.clear_form).pack(side="left", padx=5)
         ttk.Button(button_frame, text="Excluir Item", command=self.delete_item).pack(side="left", padx=5)
 
+        # Carregar itens existentes
+        self.load_items()
+
+    def add_damage_type(self):
+        """Adiciona um novo campo de tipo de dano."""
+        frame = ttk.Frame(self.damage_types_frame)
+        frame.pack(fill="x", pady=2)
+
+        damage_var = tk.StringVar()
+        type_var = tk.StringVar()
+
+        ttk.Entry(frame, textvariable=damage_var, width=10).pack(side="left", padx=5)
+        ttk.Entry(frame, textvariable=type_var, width=10).pack(side="left", padx=5)
+
+        ttk.Button(frame, text="Remover", command=lambda: self.remove_damage_type(frame)).pack(side="left", padx=5)
+
+        self.damage_types.append({'damage': damage_var, 'type': type_var})
+
+    def remove_damage_type(self, frame):
+        """Remove um campo de tipo de dano."""
+        frame.destroy()
+        # Atualizar a lista de tipos de dano removendo o que foi destruído
+        self.damage_types = [
+            dt for dt in self.damage_types
+            if not (dt['damage'].get() == frame.winfo_children()[0].get() and
+                    dt['type'].get() == frame.winfo_children()[1].get())
+        ]
+
+    def load_items(self):
+        """Carrega os itens existentes na lista."""
+        self.item_list.delete(0, tk.END)
+        for item in self.parent.inventory_data:
+            self.item_list.insert(tk.END, item['nome'])
+
+    def on_select_item(self, event):
+        """Carrega os detalhes do item selecionado no formulário."""
+        selected = self.item_list.curselection()
+        if not selected:
+            return
+
+        item = self.parent.inventory_data[selected[0]]
+        self.name_var.set(item['nome'])
+        self.acerto_bonus_var.set(item.get('acerto_bonus', ''))
+        self.weight_var.set(item.get('peso', ''))
+        self.saint_crystal_var.set(item.get('cristal_saint', ''))
+        self.qi_crystal_var.set(item.get('cristal_qi', ''))
+        self.pure_crystal_var.set(item.get('cristal_puro', ''))
+        self.description_text.delete("1.0", tk.END)
+        self.description_text.insert("1.0", item.get('descricao', ''))
+
+        # Carregar tipos de dano
+        for dt in self.damage_types:
+            dt['damage'].set('')
+            dt['type'].set('')
+        for damage, type_ in item.get('tipos_dano', []):
+            self.add_damage_type()
+            self.damage_types[-1]['damage'].set(damage)
+            self.damage_types[-1]['type'].set(type_)
+
     def save_item(self):
+        """Salva o item atual, seja novo ou editado."""
+        tipos_dano = [(dt['damage'].get(), dt['type'].get()) for dt in self.damage_types]
+
         item = {
             'nome': self.name_var.get(),
-            'tipo': self.type_var.get(),
-            'bonus_atributos': {attr: var.get() for attr, var in self.attr_vars.items()},
-            'bonus_ca': self.ac_bonus_var.get(),
-            'bonus_cd': self.cd_bonus_var.get(),
-            'dano_dado': self.damage_dice_var.get(),
-            'dano_tipo': self.damage_type_var.get(),
-            'descricao': self.description_text.get("1.0", tk.END).strip()
+            'acerto_bonus': self.acerto_bonus_var.get(),
+            'peso': self.weight_var.get(),
+            'cristal_saint': self.saint_crystal_var.get(),
+            'cristal_qi': self.qi_crystal_var.get(),
+            'cristal_puro': self.pure_crystal_var.get(),
+            'descricao': self.description_text.get("1.0", tk.END).strip(),
+            'tipos_dano': tipos_dano
         }
 
         selected = self.item_list.curselection()
         if selected:
             # Atualizar item existente
             index = selected[0]
-            self.inventory_data[index] = item
+            self.parent.inventory_data[index] = item
             self.item_list.delete(index)
             self.item_list.insert(index, item['nome'])
         else:
             # Novo item
-            self.inventory_data.append(item)
+            self.parent.inventory_data.append(item)
             self.item_list.insert(tk.END, item['nome'])
 
         messagebox.showinfo("Sucesso", "Item salvo com sucesso!")
         self.clear_form()
 
-    def load_inventory(self):
-        for item in self.inventory_data:
-            self.item_list.insert(tk.END, item['nome'])
-
-    def on_select_item(self, event):
-        selected = self.item_list.curselection()
-        if not selected:
-            return
-
-        item = self.inventory_data[selected[0]]
-        self.name_var.set(item['nome'])
-        self.type_var.set(item['tipo'])
-        
-        for attr, bonus in item['bonus_atributos'].items():
-            self.attr_vars[attr].set(bonus)
-            
-        self.ac_bonus_var.set(item['bonus_ca'])
-        self.cd_bonus_var.set(item['bonus_cd'])
-        self.damage_dice_var.set(item['dano_dado'])
-        self.damage_type_var.set(item['dano_tipo'])
-        
-        self.description_text.delete("1.0", tk.END)
-        self.description_text.insert("1.0", item['descricao'])
-
     def clear_form(self):
+        """Limpa o formulário para entrada de um novo item."""
         self.name_var.set("")
-        self.type_var.set("")
-        for var in self.attr_vars.values():
-            var.set("0")
-        self.ac_bonus_var.set("0")
-        self.cd_bonus_var.set("0")
-        self.damage_dice_var.set("")
-        self.damage_type_var.set("")
+        self.acerto_bonus_var.set("")
+        self.weight_var.set("")
+        self.saint_crystal_var.set("")
+        self.qi_crystal_var.set("")
+        self.pure_crystal_var.set("")
         self.description_text.delete("1.0", tk.END)
-        self.item_list.selection_clear(0, tk.END)
+
+        # Limpar tipos de dano
+        for dt in self.damage_types:
+            dt['damage'].set('')
+            dt['type'].set('')
 
     def delete_item(self):
+        """Exclui o item selecionado."""
         selected = self.item_list.curselection()
         if not selected:
             messagebox.showwarning("Aviso", "Selecione um item para excluir")
@@ -2448,8 +2720,13 @@ class InventoryScreen:
         if messagebox.askyesno("Confirmar", "Deseja realmente excluir este item?"):
             index = selected[0]
             self.item_list.delete(index)
-            self.inventory_data.pop(index)
+            self.parent.inventory_data.pop(index)
             self.clear_form()
+
+    def calculate_total_weight(self):
+        """Calcula o peso total do inventário."""
+        total_weight = sum(float(item.get('peso', 0)) for item in self.parent.inventory_data)
+        messagebox.showinfo("Peso Total", f"O peso total do inventário é: {total_weight} lbs")
 
 class FeatureScreen:
     def __init__(self, parent):
@@ -2475,7 +2752,7 @@ class FeatureScreen:
         self.all_features = []
         self.load_features()
         
-        # Bind para seleção de habilidade
+        # Bind para seleç��o de habilidade
         self.feature_list.bind('<<ListboxSelect>>', self.on_feature_select)
 
     def create_split_layout(self):
@@ -2596,6 +2873,267 @@ class FeatureScreen:
         messagebox.showinfo("Sucesso", "Habilidade salva com sucesso!")
         self.clear_form()
         self.all_features = self.parent.features_data.copy()
+
+class AffinityScreen:
+    def __init__(self, parent):
+        self.parent = parent
+        self.window = tk.Toplevel(parent.root)
+        self.window.title("Afinidades")
+        self.window.geometry("800x600")
+        
+        # Adicionar barra de busca no topo
+        search_frame = ttk.Frame(self.window)
+        search_frame.pack(fill="x", padx=5, pady=5)
+        
+        ttk.Label(search_frame, text="Buscar:").pack(side="left", padx=5)
+        self.search_var = tk.StringVar()
+        self.search_var.trace('w', self.filter_affinities)
+        search_entry = ttk.Entry(search_frame, textvariable=self.search_var)
+        search_entry.pack(side="left", fill="x", expand=True, padx=5)
+        
+        # Frame principal dividido em duas partes
+        self.create_split_layout()
+        
+        # Armazenar todas as afinidades
+        self.all_affinities = []
+        self.load_affinities()
+        
+        # Bind para seleção de afinidade
+        self.affinity_list.bind('<<ListboxSelect>>', self.on_affinity_select)
+
+    def create_split_layout(self):
+        # Frame esquerdo para lista de afinidades
+        left_frame = ttk.Frame(self.window)
+        left_frame.pack(side="left", fill="both", expand=True, padx=5, pady=5)
+        
+        # Lista de afinidades
+        ttk.Label(left_frame, text="Afinidades").pack(anchor="w")
+        list_container = ttk.Frame(left_frame)
+        list_container.pack(fill="both", expand=True)
+        
+        self.affinity_list = tk.Listbox(list_container, width=30)
+        self.affinity_list.pack(side="left", fill="both", expand=True)
+        
+        scrollbar = ttk.Scrollbar(list_container, orient="vertical", command=self.affinity_list.yview)
+        scrollbar.pack(side="right", fill="y")
+        self.affinity_list.config(yscrollcommand=scrollbar.set)
+        
+        # Frame direito para formulário
+        right_frame = ttk.Frame(self.window)
+        right_frame.pack(side="right", fill="both", expand=True, padx=5, pady=5)
+        
+        # Formulário
+        form_frame = ttk.LabelFrame(right_frame, text="Detalhes da Afinidade")
+        form_frame.pack(fill="both", expand=True)
+        
+        # Campo Nome
+        ttk.Label(form_frame, text="Nome:").pack(anchor="w", padx=5, pady=2)
+        self.name_var = tk.StringVar()
+        ttk.Entry(form_frame, textvariable=self.name_var, width=40).pack(fill="x", padx=5, pady=2)
+        
+        # Campo Total de Bônus
+        ttk.Label(form_frame, text="Total de Bônus:").pack(anchor="w", padx=5, pady=2)
+        self.bonus_var = tk.StringVar()
+        ttk.Entry(form_frame, textvariable=self.bonus_var, width=40).pack(fill="x", padx=5, pady=2)
+        
+        # Campo Descrição
+        ttk.Label(form_frame, text="Descrição:").pack(anchor="w", padx=5, pady=2)
+        text_frame = ttk.Frame(form_frame)
+        text_frame.pack(fill="both", expand=True, padx=5, pady=2)
+        
+        self.description_text = tk.Text(text_frame, wrap=tk.WORD, height=20)
+        self.description_text.pack(side="left", fill="both", expand=True)
+        
+        desc_scrollbar = ttk.Scrollbar(text_frame, orient="vertical", command=self.description_text.yview)
+        desc_scrollbar.pack(side="right", fill="y")
+        self.description_text.config(yscrollcommand=desc_scrollbar.set)
+        
+        # Botões
+        button_frame = ttk.Frame(form_frame)
+        button_frame.pack(fill="x", padx=5, pady=5)
+        
+        ttk.Button(button_frame, text="Salvar", command=self.save_affinity).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="Novo", command=self.clear_form).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="Excluir", command=self.delete_affinity).pack(side="left", padx=5)
+
+    def filter_affinities(self, *args):
+        search_term = self.search_var.get().lower().strip()
+        
+        self.affinity_list.delete(0, tk.END)
+        for affinity in self.all_affinities:
+            # Busca no nome e na descrição
+            if (search_term in affinity['nome'].lower() or 
+                search_term in affinity.get('descricao', '').lower()):
+                self.affinity_list.insert(tk.END, affinity['nome'])
+    
+    def load_affinities(self):
+        self.all_affinities = getattr(self.parent, 'affinities_data', []).copy()
+        self.filter_affinities()
+
+    def on_affinity_select(self, event):
+        selection = self.affinity_list.curselection()
+        
+        if not selection:
+            return
+            
+        index = selection[0]
+        affinity_name = self.affinity_list.get(index)
+        
+        # Encontrar a afinidade nos dados
+        affinity = next((a for a in self.parent.affinities_data if a['nome'] == affinity_name), None)
+        
+        if affinity:
+            self.name_var.set(affinity['nome'])
+            self.bonus_var.set(affinity.get('bonus', ''))
+            self.description_text.delete("1.0", tk.END)
+            self.description_text.insert("1.0", affinity['descricao'])
+
+    def delete_affinity(self):
+        selected = self.affinity_list.curselection()
+        if not selected:
+            messagebox.showwarning("Aviso", "Selecione uma afinidade para excluir")
+            return
+
+        if messagebox.askyesno("Confirmar", "Deseja realmente excluir esta afinidade?"):
+            index = selected[0]
+            self.affinity_list.delete(index)
+            self.parent.affinities_data.pop(index)
+            self.clear_form()
+            self.all_affinities = self.parent.affinities_data.copy()
+
+    def clear_form(self):
+        self.name_var.set("")
+        self.bonus_var.set("")
+        self.description_text.delete("1.0", tk.END)
+        self.affinity_list.selection_clear(0, tk.END)
+
+    def save_affinity(self):
+        affinity = {
+            'nome': self.name_var.get(),
+            'bonus': self.bonus_var.get(),
+            'descricao': self.description_text.get("1.0", tk.END).strip()
+        }
+
+        selected = self.affinity_list.curselection()
+        if selected:
+            # Atualizar afinidade existente
+            index = selected[0]
+            self.parent.affinities_data[index] = affinity
+            self.affinity_list.delete(index)
+            self.affinity_list.insert(index, affinity['nome'])
+        else:
+            # Nova afinidade
+            self.parent.affinities_data.append(affinity)
+            self.affinity_list.insert(tk.END, affinity['nome'])
+
+        messagebox.showinfo("Sucesso", "Afinidade salva com sucesso!")
+        self.clear_form()
+        self.all_affinities = self.parent.affinities_data.copy()
+
+class GrimoireScreen:
+    def __init__(self, parent):
+        self.parent = parent
+        self.window = tk.Toplevel(parent.root)
+        self.window.title("Grimório")
+        self.window.geometry("800x600")
+
+        self.current_page = 0
+        self.spells_per_page = 2
+        self.total_pages = (len(parent.spells_data) + self.spells_per_page - 1) // self.spells_per_page
+
+        # Frame para navegação
+        nav_frame = ttk.Frame(self.window)
+        nav_frame.pack(fill="x", padx=5, pady=5)
+
+        ttk.Button(nav_frame, text="<< Anterior", command=self.previous_page).pack(side="left", padx=5)
+        self.page_var = tk.StringVar(value=f"Página 1 de {self.total_pages}")
+        ttk.Label(nav_frame, textvariable=self.page_var).pack(side="left", padx=5)
+        ttk.Button(nav_frame, text="Próxima >>", command=self.next_page).pack(side="left", padx=5)
+
+        # Canvas para rolagem
+        canvas = tk.Canvas(self.window)
+        canvas.pack(side="left", fill="both", expand=True)
+
+        # Barra de rolagem
+        scrollbar = ttk.Scrollbar(self.window, orient="vertical", command=canvas.yview)
+        scrollbar.pack(side="right", fill="y")
+
+        # Frame dentro do canvas
+        self.spell_frame = ttk.Frame(canvas)
+        canvas.create_window((0, 0), window=self.spell_frame, anchor="nw")
+
+        # Configurar a barra de rolagem
+        self.spell_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        self.display_spells()
+
+    def display_spells(self):
+        for widget in self.spell_frame.winfo_children():
+            widget.destroy()
+
+        start_index = self.current_page * self.spells_per_page
+        end_index = start_index + self.spells_per_page
+        spells_to_display = self.parent.spells_data[start_index:end_index]
+
+        for i, spell in enumerate(spells_to_display):
+            spell_frame = ttk.LabelFrame(self.spell_frame, text=spell['nome'])
+            spell_frame.grid(row=0, column=i, padx=5, pady=5, sticky="nsew")
+
+            ttk.Label(spell_frame, text=f"Nível: {spell['nivel']}").pack(anchor="w")
+            ttk.Label(spell_frame, text=f"Escola: {spell['escola']}").pack(anchor="w")
+            ttk.Label(spell_frame, text=f"Tempo de Conjuração: {spell['tempo_conjuracao']}").pack(anchor="w")
+            ttk.Label(spell_frame, text=f"Alcance: {spell['alcance']}").pack(anchor="w")
+            ttk.Label(spell_frame, text=f"Componentes: {spell['componentes']}").pack(anchor="w")
+            ttk.Label(spell_frame, text=f"Duração: {spell['duracao']}").pack(anchor="w")
+            custo_mana = spell.get('custo_mana', '0')
+            ttk.Label(spell_frame, text=f"Custo de Mana: {custo_mana}").pack(anchor="w")
+            ttk.Label(spell_frame, text=f"Teste de Resistência: {spell['teste_resistencia']}").pack(anchor="w")
+            ttk.Label(spell_frame, text=f"Dano/Efeito: {spell['dano_efeito']}").pack(anchor="w")
+            ttk.Label(spell_frame, text="Descrição:").pack(anchor="w")
+            ttk.Label(spell_frame, text=spell['descricao'], wraplength=200).pack(anchor="w")
+            ttk.Label(spell_frame, text="Em Níveis Superiores:").pack(anchor="w")
+            ttk.Label(spell_frame, text=spell['niveis_superiores'], wraplength=200).pack(anchor="w")
+
+        # Configurar o grid para esticar
+        self.spell_frame.grid_columnconfigure(0, weight=1)
+        self.spell_frame.grid_columnconfigure(1, weight=1)
+
+    def next_page(self):
+        if self.current_page < self.total_pages - 1:
+            self.current_page += 1
+            self.update_page()
+
+    def previous_page(self):
+        if self.current_page > 0:
+            self.current_page -= 1
+            self.update_page()
+
+    def update_page(self):
+        self.page_var.set(f"Página {self.current_page + 1} de {self.total_pages}")
+        self.display_spells()
+
+def normalize_data(data):
+    """Normaliza os dados do JSON para garantir compatibilidade com a versão atual."""
+    # Verificar e ajustar a estrutura de 'alignment'
+    if 'alignment' not in data:
+        data['alignment'] = {'moral': '', 'order': ''}
+    
+    # Garantir que 'moral' e 'order' existam
+    if 'moral' not in data['alignment']:
+        data['alignment']['moral'] = ''
+    if 'order' not in data['alignment']:
+        data['alignment']['order'] = ''
+    
+    # Verificar e ajustar a estrutura de 'classes'
+    if 'classes' not in data:
+        data['classes'] = {'Classe Primária': '', 'Classe Secundária': '', 'Classe Terciária': ''}
+    
+    # Verificar e ajustar a estrutura de 'basic_info'
+    if 'basic_info' not in data:
+        data['basic_info'] = {'Nome': '', 'Raça': '', 'Antecedente': '', 'Nível': '0'}
+    
+    return data
 
 if __name__ == "__main__":
     root = tk.Tk()
